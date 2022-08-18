@@ -13,6 +13,7 @@ import (
 var (
     healthy = true
     reliability *float32 = flag.Float32("reliability", 1.0, "target reliability for the health-probe results")
+    // TODO(janrous): we can emulate outages every A-B minutes that last for C-D minutes.
     rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
