@@ -5,26 +5,14 @@ import (
     "net/http"
     "k8s.io/component-base/cli"
     "github.com/spf13/cobra"
-    flag "github.com/spf13/pflag"
     "math/rand"
     "time"
 )
 
 var (
-    healthy = true
-    reliability *float32 = flag.Float32("reliability", 1.0, "target reliability for the health-probe results")
     // TODO(janrous): we can emulate outages every A-B minutes that last for C-D minutes.
     rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
-
-func pingHandler(w http.ResponseWriter, req *http.Request) {
-    if healthy && (rng.Float32() < *reliability) {
-        w.WriteHeader(200)
-    } else {
-        w.WriteHeader(500)
-    }
-}
-
 // TODO(janrous): add feature for marking the server as (un)healthy
 // TODO(janrous): add command-line flags for simulating unhealthy
 
@@ -35,8 +23,36 @@ var CmdProbeServer = &cobra.Command{
     Run: probeServer,
 }
 
+type ServerState struct {
+    Reliability float32
+    Healthy bool
+}
+
+
 func probeServer(cmd *cobra.Command, args []string) {
-    http.HandleFunc("/ping", pingHandler)
+    rel, err := cmd.Flags().GetFloat32("reliability")
+    if err != nil {
+        panic(err)
+    }
+    state := ServerState{
+        Reliability: rel,
+        Healthy: true,
+    }
+    http.HandleFunc("/ping", func(w http.ResponseWriter, req *http.Request) {
+        if state.Healthy && (rng.Float32() < state.Reliability) {
+            w.WriteHeader(200)
+        } else {
+            w.WriteHeader(500)
+        }
+    })
+    http.HandleFunc("/startoutage", func(w http.ResponseWriter, req *http.Request) {
+        state.Healthy = false
+        w.WriteHeader(200)
+    })
+    http.HandleFunc("/endoutage", func(w http.ResponseWriter, req *http.Request) {
+        state.Healthy = true
+        w.WriteHeader(200)
+    })
     // http.HandleFunc("/shutdown, shutdownHandler)
     http.ListenAndServe(":8090", nil)
 }
@@ -45,6 +61,7 @@ func main() {
         Use: "app",
     }
     rootCmd.AddCommand(CmdProbeServer)
+    CmdProbeServer.PersistentFlags().Float32("reliability", 0.95, "target reliability for the health-probe results")
 
     code := cli.Run(rootCmd)
     os.Exit(code)
